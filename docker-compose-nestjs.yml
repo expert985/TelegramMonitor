@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  # MySQL 5.7 数据库
+  mysql:
+    image: mysql:5.7
+    container_name: telegram-monitor-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: telegram_monitor
+      MYSQL_USER: telegram
+      MYSQL_PASSWORD: telegram123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - telegram-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: telegram-monitor-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - telegram-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # NestJS 应用
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile-nestjs
+    container_name: telegram-monitor-app
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      # 数据库配置
+      DB_TYPE: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USERNAME: telegram
+      DB_PASSWORD: telegram123
+      DB_DATABASE: telegram_monitor
+      DB_SYNCHRONIZE: "true"
+      # Redis 配置
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      REDIS_DB: 0
+      # Telegram API 配置（需要填写）
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+      TELEGRAM_SESSION_PATH: /app/sessions
+      # 日志配置
+      LOG_LEVEL: info
+    volumes:
+      - ./sessions:/app/sessions
+      - ./logs:/app/logs
+    networks:
+      - telegram-network
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  telegram-network:
+    driver: bridge
